@@ -35,76 +35,97 @@ func (c *AccountCore) AccountUpdateProfile(in *mtproto.TLAccountUpdateProfile) (
 		return nil, err
 	}
 
-	// Handle About field
-	if in.GetAbout() != nil {
-		aboutValue := in.GetAbout().GetValue()
-		if len(aboutValue) > 70 {
-			err = mtproto.ErrAboutTooLong
-			c.Logger.Errorf("account.updateProfile - error: %v", err)
+	firstName := in.GetFirstName()
+	lastName := in.GetLastName()
+	about := in.GetAbout()
+
+	if firstName != nil || lastName != nil {
+		// Both first name and last name must be provided
+		if firstName == nil || lastName == nil {
+			err = mtproto.ErrFirstnameInvalid
+			c.Logger.Errorf("account.updateProfile - error: bad request (%v)", err)
 			return nil, err
 		}
 
-		if aboutValue != me.About() {
-			c.Logger.Debugf("account.updateProfile - updating about to %s", aboutValue)
-			if _, err = c.svcCtx.Dao.UserClient.UserUpdateAbout(c.ctx, &userpb.TLUserUpdateAbout{
-				UserId: c.MD.UserId,
-				About:  aboutValue,
-			}); err != nil {
-				c.Logger.Errorf("account.updateProfile - error updating about: %v", err)
-				return nil, err
-			}
-			me.SetAbout(aboutValue)
-		} else {
-			c.Logger.Debugf("account.updateProfile - about is the same, not updating")
+		if err = updateFirstNameAndLastName(firstName.GetValue(), lastName.GetValue(), c, me); err != nil {
+			return nil, err
+		}
+	} else if about != nil {
+		if err = updateAbout(about.GetValue(), c, me); err != nil {
+			return nil, err
 		}
 	} else {
-		if in.GetFirstName() == nil || in.GetLastName() == nil {
-			err = mtproto.ErrFirstnameInvalid
-			c.Logger.Errorf("account.updateProfile - error: bad request (%v)", err)
-			return nil, err
-		}
-
-		firstName := in.GetFirstName().GetValue()
-		lastName := in.GetLastName().GetValue()
-
-		if firstName == "" {
-			err = mtproto.ErrFirstnameInvalid
-			c.Logger.Errorf("account.updateProfile - error: bad request (%v)", err)
-			return nil, err
-		}
-
-		if firstName != me.FirstName() || lastName != me.LastName() {
-			c.Logger.Debugf("account.updateProfile - updating first name to %s and last name to %s", firstName, lastName)
-			if _, err = c.svcCtx.Dao.UserClient.UserUpdateFirstAndLastName(c.ctx, &userpb.TLUserUpdateFirstAndLastName{
-				UserId:    c.MD.UserId,
-				FirstName: firstName,
-				LastName:  lastName,
-			}); err != nil {
-				c.Logger.Errorf("account.updateProfile - error updating names: %v", err)
-				return nil, err
-			}
-
-			me.SetFirstName(firstName)
-			me.SetLastName(lastName)
-
-			if _, err = c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
-				UserId:        c.MD.UserId,
-				PermAuthKeyId: c.MD.PermAuthKeyId,
-				Updates: mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateUserName(&mtproto.Update{
-					UserId:    c.MD.UserId,
-					FirstName: firstName,
-					LastName:  lastName,
-					Username:  me.Username(),
-				}).To_Update()),
-			}); err != nil {
-				c.Logger.Errorf("account.updateProfile - error syncing updates: %v", err)
-				return nil, err
-			}
-		} else {
-			c.Logger.Debugf("account.updateProfile - names are the same, not updating")
-		}
+		// At least one of the fields must be provided
+		err = mtproto.ErrErrBadRequest
+		c.Logger.Errorf("account.updateProfile - error: bad request (%v)", err)
+		return nil, err
 	}
 
 	c.Logger.Debugf("account.updateProfile - success, first name: %s, last name: %s, about: %s", me.FirstName(), me.LastName(), me.About())
 	return me.ToSelfUser(), nil
+}
+
+func updateAbout(aboutValue string, c *AccountCore, me *mtproto.ImmutableUser) error {
+	if len(aboutValue) > 70 {
+		err := mtproto.ErrAboutTooLong
+		c.Logger.Errorf("account.updateProfile - error: %v", err)
+		return err
+	}
+
+	if aboutValue != me.About() {
+		c.Logger.Debugf("account.updateProfile - updating about to %s", aboutValue)
+		if _, err := c.svcCtx.Dao.UserClient.UserUpdateAbout(c.ctx, &userpb.TLUserUpdateAbout{
+			UserId: c.MD.UserId,
+			About:  aboutValue,
+		}); err != nil {
+			c.Logger.Errorf("account.updateProfile - error updating about: %v", err)
+			return err
+		}
+		me.SetAbout(aboutValue)
+	} else {
+		c.Logger.Debugf("account.updateProfile - about is the same, not updating")
+	}
+
+	return nil
+}
+
+func updateFirstNameAndLastName(firstName string, lastName string, c *AccountCore, me *mtproto.ImmutableUser) error {
+	if firstName == "" {
+		err := mtproto.ErrFirstnameInvalid
+		c.Logger.Errorf("account.updateProfile - error: bad request (%v)", err)
+		return err
+	}
+
+	if firstName != me.FirstName() || lastName != me.LastName() {
+		c.Logger.Debugf("account.updateProfile - updating first name to %s and last name to %s", firstName, lastName)
+		if _, err := c.svcCtx.Dao.UserClient.UserUpdateFirstAndLastName(c.ctx, &userpb.TLUserUpdateFirstAndLastName{
+			UserId:    c.MD.UserId,
+			FirstName: firstName,
+			LastName:  lastName,
+		}); err != nil {
+			c.Logger.Errorf("account.updateProfile - error updating names: %v", err)
+			return err
+		}
+
+		me.SetFirstName(firstName)
+		me.SetLastName(lastName)
+
+		if _, err := c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
+			UserId:        c.MD.UserId,
+			PermAuthKeyId: c.MD.PermAuthKeyId,
+			Updates: mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateUserName(&mtproto.Update{
+				UserId:    c.MD.UserId,
+				FirstName: firstName,
+				LastName:  lastName,
+				Username:  me.Username(),
+			}).To_Update()),
+		}); err != nil {
+			c.Logger.Errorf("account.updateProfile - error syncing updates: %v", err)
+			return err
+		}
+	} else {
+		c.Logger.Debugf("account.updateProfile - names are the same, not updating")
+	}
+
+	return nil
 }
