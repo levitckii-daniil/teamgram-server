@@ -45,6 +45,7 @@ func (c *AccountCore) AccountUpdateProfile(in *mtproto.TLAccountUpdateProfile) (
 		}
 
 		if aboutValue != me.About() {
+			c.Logger.Debugf("account.updateProfile - updating about to %s", aboutValue)
 			if _, err = c.svcCtx.Dao.UserClient.UserUpdateAbout(c.ctx, &userpb.TLUserUpdateAbout{
 				UserId: c.MD.UserId,
 				About:  aboutValue,
@@ -53,6 +54,8 @@ func (c *AccountCore) AccountUpdateProfile(in *mtproto.TLAccountUpdateProfile) (
 				return nil, err
 			}
 			me.SetAbout(aboutValue)
+		} else {
+			c.Logger.Debugf("account.updateProfile - about is the same, not updating")
 		}
 	} else {
 		if in.GetFirstName() == nil || in.GetLastName() == nil {
@@ -71,6 +74,7 @@ func (c *AccountCore) AccountUpdateProfile(in *mtproto.TLAccountUpdateProfile) (
 		}
 
 		if firstName != me.FirstName() || lastName != me.LastName() {
+			c.Logger.Debugf("account.updateProfile - updating first name to %s and last name to %s", firstName, lastName)
 			if _, err = c.svcCtx.Dao.UserClient.UserUpdateFirstAndLastName(c.ctx, &userpb.TLUserUpdateFirstAndLastName{
 				UserId:    c.MD.UserId,
 				FirstName: firstName,
@@ -96,8 +100,11 @@ func (c *AccountCore) AccountUpdateProfile(in *mtproto.TLAccountUpdateProfile) (
 				c.Logger.Errorf("account.updateProfile - error syncing updates: %v", err)
 				return nil, err
 			}
+		} else {
+			c.Logger.Debugf("account.updateProfile - names are the same, not updating")
 		}
 	}
 
+	c.Logger.Debugf("account.updateProfile - success, first name: %s, last name: %s, about: %s", me.FirstName(), me.LastName(), me.About())
 	return me.ToSelfUser(), nil
 }
