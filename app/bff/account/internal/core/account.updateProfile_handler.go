@@ -30,55 +30,72 @@ func (c *AccountCore) AccountUpdateProfile(in *mtproto.TLAccountUpdateProfile) (
 	me, err := c.svcCtx.Dao.UserClient.UserGetImmutableUser(c.ctx, &userpb.TLUserGetImmutableUser{
 		Id: c.MD.UserId,
 	})
+	if err != nil {
+		c.Logger.Errorf("account.updateProfile - error getting user: %v", err)
+		return nil, err
+	}
 
+	// Handle About field
 	if in.GetAbout() != nil {
-		//// about长度<70并且可以为emtpy
-		if len(in.GetAbout().GetValue()) > 70 {
+		aboutValue := in.GetAbout().GetValue()
+		if len(aboutValue) > 70 {
 			err = mtproto.ErrAboutTooLong
 			c.Logger.Errorf("account.updateProfile - error: %v", err)
 			return nil, err
 		}
 
-		if in.GetAbout().GetValue() != me.About() {
+		if aboutValue != me.About() {
 			if _, err = c.svcCtx.Dao.UserClient.UserUpdateAbout(c.ctx, &userpb.TLUserUpdateAbout{
 				UserId: c.MD.UserId,
-				About:  in.GetAbout().GetValue(),
+				About:  aboutValue,
 			}); err != nil {
-				c.Logger.Errorf("account.updateProfile - error: %v", err)
-			} else {
-				me.SetAbout(in.GetAbout().GetValue())
+				c.Logger.Errorf("account.updateProfile - error updating about: %v", err)
+				return nil, err
 			}
+			me.SetAbout(aboutValue)
 		}
 	} else {
-		if in.GetFirstName().GetValue() == "" {
+		if in.GetFirstName() == nil || in.GetLastName() == nil {
 			err = mtproto.ErrFirstnameInvalid
 			c.Logger.Errorf("account.updateProfile - error: bad request (%v)", err)
 			return nil, err
 		}
 
-		if in.GetFirstName().GetValue() != me.FirstName() ||
-			in.GetLastName().GetValue() != me.LastName() {
+		firstName := in.GetFirstName().GetValue()
+		lastName := in.GetLastName().GetValue()
+
+		if firstName == "" {
+			err = mtproto.ErrFirstnameInvalid
+			c.Logger.Errorf("account.updateProfile - error: bad request (%v)", err)
+			return nil, err
+		}
+
+		if firstName != me.FirstName() || lastName != me.LastName() {
 			if _, err = c.svcCtx.Dao.UserClient.UserUpdateFirstAndLastName(c.ctx, &userpb.TLUserUpdateFirstAndLastName{
 				UserId:    c.MD.UserId,
-				FirstName: in.GetFirstName().GetValue(),
-				LastName:  in.GetLastName().GetValue(),
+				FirstName: firstName,
+				LastName:  lastName,
 			}); err != nil {
-				c.Logger.Errorf("account.updateProfile - error: %v", err)
-			} else {
-				me.SetFirstName(in.GetFirstName().GetValue())
-				me.SetLastName(in.GetLastName().GetValue())
+				c.Logger.Errorf("account.updateProfile - error updating names: %v", err)
+				return nil, err
 			}
 
-			c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
+			me.SetFirstName(firstName)
+			me.SetLastName(lastName)
+
+			if _, err = c.svcCtx.Dao.SyncClient.SyncUpdatesNotMe(c.ctx, &sync.TLSyncUpdatesNotMe{
 				UserId:        c.MD.UserId,
 				PermAuthKeyId: c.MD.PermAuthKeyId,
 				Updates: mtproto.MakeUpdatesByUpdates(mtproto.MakeTLUpdateUserName(&mtproto.Update{
 					UserId:    c.MD.UserId,
-					FirstName: in.GetFirstName().GetValue(),
-					LastName:  in.GetLastName().GetValue(),
+					FirstName: firstName,
+					LastName:  lastName,
 					Username:  me.Username(),
 				}).To_Update()),
-			})
+			}); err != nil {
+				c.Logger.Errorf("account.updateProfile - error syncing updates: %v", err)
+				return nil, err
+			}
 		}
 	}
 
