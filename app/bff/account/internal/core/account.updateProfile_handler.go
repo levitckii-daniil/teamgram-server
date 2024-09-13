@@ -39,6 +39,8 @@ func (c *AccountCore) AccountUpdateProfile(in *mtproto.TLAccountUpdateProfile) (
 	lastName := in.GetLastName()
 	about := in.GetAbout()
 
+	c.Logger.Debugf("account.updateProfile - first name: %s, last name: %s, about: %s", firstName, lastName, about)
+
 	if firstName != nil || lastName != nil {
 		// Both first name and last name must be provided
 		if firstName == nil || lastName == nil {
