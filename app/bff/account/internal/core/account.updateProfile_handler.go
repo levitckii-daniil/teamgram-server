@@ -52,15 +52,12 @@ func (c *AccountCore) AccountUpdateProfile(in *mtproto.TLAccountUpdateProfile) (
 		if err = updateFirstNameAndLastName(firstName.GetValue(), lastName.GetValue(), c, me); err != nil {
 			return nil, err
 		}
-	} else if about != nil {
+	}
+
+	if about != nil {
 		if err = updateAbout(about.GetValue(), c, me); err != nil {
 			return nil, err
 		}
-	} else {
-		// At least one of the fields must be provided
-		err = mtproto.ErrErrBadRequest
-		c.Logger.Errorf("account.updateProfile - error: bad request (%v)", err)
-		return nil, err
 	}
 
 	c.Logger.Debugf("account.updateProfile - success, first name: %s, last name: %s, about: %s", me.FirstName(), me.LastName(), me.About())
